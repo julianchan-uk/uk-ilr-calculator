@@ -2,62 +2,85 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-st.set_page_config(page_title="英國永居(ILR)日期計算器", page_icon="🇬🇧")
+# 網頁基本設定
+st.set_page_config(page_title="英國永居(ILR)離境計算器", page_icon="🇬🇧")
 
-st.title("🇬🇧 英國永居 (ILR) 專業計算器")
-st.write("支援手動輸入或上傳 CSV 檔案進行計算")
+st.title("🇬🇧 英國永居 (ILR) 居住要求檢查")
+st.markdown("### ✈️ 人手輸入離境紀錄")
+st.write("請逐次輸入你離開英國及返回英國的日期。系統會自動扣除首尾兩天（不計入缺勤）。")
 
-# --- 1. 基礎日期設定 ---
-col1, col2 = st.columns(2)
-with col1:
-    visa_date = st.date_input("BNO 簽證批核日子", value=datetime(2021, 1, 31))
-with col2:
-    entry_date = st.date_input("首次入境英國日子", value=datetime(2021, 3, 1))
+# --- 1. 初始化儲存空間 (Session State) ---
+if 'my_records' not in st.session_state:
+    st.session_state.my_records = []
+
+# --- 2. 人手輸入區 ---
+with st.expander("➕ 點擊此處新增一段離境紀錄", expanded=True):
+    col1, col2 = st.columns(2)
+    with col1:
+        d_leave = st.date_input("離開英國日期", value=datetime.today(), key="d_leave")
+    with col2:
+        d_return = st.date_input("返回英國日期", value=datetime.today(), key="d_return")
+    
+    if st.button("確認加入這段紀錄"):
+        if d_return > d_leave:
+            # 英國計算規則：離境日及入境日當天不算缺勤
+            # 公式：(返回日期 - 離開日期) - 1
+            days_out = (d_return - d_leave).days - 1
+            days_out = max(0, days_out)
+            
+            # 存入列表
+            st.session_state.my_records.append({
+                "離開日期": d_leave,
+                "返回日期": d_return,
+                "離境天數": days_out
+            })
+            st.success(f"已成功加入：{days_out} 天")
+            st.rerun() # 重新整理頁面以顯示新數據
+        else:
+            st.error("錯誤：返回日期必須在離開日期之後！")
 
 st.divider()
 
-# --- 2. CSV 匯出/匯入功能 ---
-st.subheader("📁 匯入離境紀錄 (CSV)")
-st.caption("CSV 格式要求：需包含 'start_date' (離開) 和 'end_date' (返回) 兩欄，日期格式如 2023-01-01")
-
-uploaded_file = st.file_uploader("選擇你的 CSV 檔案", type="csv")
-
-trips = []
-
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
-    # 將文字轉為日期格式
-    df['start_date'] = pd.to_datetime(df['start_date']).dt.date
-    df['end_date'] = pd.to_datetime(df['end_date']).dt.date
+# --- 3. 顯示結果與表格 ---
+if st.session_state.my_records:
+    # 轉換成表格
+    df = pd.DataFrame(st.session_state.my_records)
     
-    # 計算每一段的天數 (回程 - 去程 - 1)
-    for index, row in df.iterrows():
-        days = (row['end_date'] - row['start_date']).days - 1
-        days = max(0, days)
-        trips.append({"leave": row['start_date'], "return": row['end_date'], "days": days})
-    st.success(f"成功匯入 {len(trips)} 段紀錄！")
+    # 計算總天數
+    total_days = df["離境天數"].sum()
+    
+    # 顯示統計數據
+    st.subheader("📊 當前統計結果")
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        st.metric("已登記段數", f"{len(df)} 段")
+    with c2:
+        if total_days <= 450:
+            st.metric("總離境天數", f"{total_days} / 450 日", delta="符合規定", delta_color="normal")
+        else:
+            st.metric("總離境天數", f"{total_days} / 450 日", delta="已超標！", delta_color="inverse")
 
-# --- 3. 計算與顯示結果 ---
-if trips:
-    df_display = pd.DataFrame(trips)
-    st.table(df_display) # 顯示表格
-    
-    total_days = sum(t['days'] for t in trips)
-    
-    st.divider()
-    st.subheader("📊 審查結果")
-    
-    # 450日規則
-    if total_days <= 450:
-        st.success(f"✅ 5年總計：{total_days} 日 (符合 450 日要求)")
-    else:
-        st.error(f"❌ 5年總計：{total_days} 日 (超出 450 日限制！)")
+    # 顯示明細表格
+    st.write("### 📝 離境明細清單")
+    st.dataframe(df, use_container_width=True)
 
-    # 匯出功能：讓使用者也可以把網頁上的結果導出 CSV
-    csv = df_display.to_csv(index=False).encode('utf-8')
+    # --- 4. 匯出 CSV 按鈕 ---
+    st.write("---")
+    # 使用 utf-8-sig 讓 Excel 開啟中文不會亂碼
+    csv = df.to_csv(index=False).encode('utf-8-sig')
     st.download_button(
-        label="📥 下載計算結果為 CSV",
+        label="📥 匯出並下載我的紀錄 (CSV)",
         data=csv,
-        file_name='uk_ilr_calculation.csv',
+        file_name='uk_ilr_records.csv',
         mime='text/csv',
     )
+    
+    if st.button("🗑️ 清空所有數據"):
+        st.session_state.my_records = []
+        st.rerun()
+else:
+    st.info("💡 目前還沒有任何紀錄。請點擊上方「新增」按鈕開始手動輸入。")
+
+st.divider()
+st.caption("提示：根據英國政府規定，申請永居(ILR)時，5年內總離境天數不得超過450日，且任何連續12個月內不得超過180日。")
