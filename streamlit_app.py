@@ -15,7 +15,7 @@ if st.sidebar.button("🚨 重新開始 (清空所有資料)"):
     st.session_state.my_records = []
     st.rerun()
 
-st.title("🇬🇧 英國永居 (ILR) 居住要求檢查")
+st.title("BNO 英國永居 (ILR) 居住要求檢查")
 
 # --- 2. 基礎日期設定 (已修改為預設今天) ---
 with st.container():
