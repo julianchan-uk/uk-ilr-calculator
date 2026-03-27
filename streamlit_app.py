@@ -2,88 +2,101 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 
-# 1. 網頁配置
+# 1. 基本配置
 st.set_page_config(page_title="英國 BNO 永居計算器", page_icon="🇬🇧")
 
-# --- 終極重置邏輯 ---
-# 檢查 URL 參數或使用一個手動開關來強制重置
-if 'kill_switch' not in st.session_state:
-    st.session_state.clear()
-    st.session_state['kill_switch'] = True
+# --- 強制重置邏輯 (確保每次重新整理都清空) ---
+if 'my_records' not in st.session_state or st.sidebar.button("🚨 重新開始 (清空所有)"):
     st.session_state.my_records = []
+    st.session_state.initialized = True
 
 st.title("🇬🇧 英國永居 (ILR) 居住要求檢查")
-st.markdown("---")
 
 # --- 2. 基礎日期設定 ---
 with st.container():
     col1, col2 = st.columns(2)
     with col1:
-        visa_grant_date = st.date_input("1. BNO 簽證批核日子", value=datetime(2022, 6, 27))
+        visa_date = st.date_input("1. BNO 簽證批核日子", value=datetime(2022, 6, 27))
     with col2:
-        entry_uk_date = st.date_input("2. 首次入境英國日子", value=datetime(2022, 9, 13))
+        entry_date = st.date_input("2. 首次入境英國日子", value=datetime(2022, 9, 13))
 
-# 初始化第一筆：入境前空白期
+# 初始化「入境前空白期」
 if not st.session_state.my_records:
-    gap_days = (entry_uk_date - visa_grant_date).days
-    st.session_state.my_records = [{
+    gap = (entry_date - visa_date).days
+    st.session_state.my_records.append({
         "項目": "入境前空白期",
-        "離開日期": visa_grant_date,
-        "返回日期": entry_uk_date,
-        "離境天數": int(gap_days)
-    }]
+        "離開日期": visa_date,
+        "返回日期": entry_date,
+        "離境天數": int(gap)
+    })
 
-# --- 3. 新增紀錄介面 ---
-st.subheader("✈️ 手動新增旅遊紀錄")
-with st.expander("➕ 點擊此處新增紀錄"):
-    c1, c2 = st.columns(2)
+st.divider()
+
+# --- 3. 手動新增紀錄 ---
+st.subheader("✈️ 新增旅遊紀錄")
+with st.form("add_form", clear_on_submit=True):
+    c1, c2, c3 = st.columns([2, 2, 1])
     with c1:
-        d_leave = st.date_input("離開英國日期", value=datetime.today())
+        d_l = st.date_input("離開英國日期")
     with c2:
-        d_return = st.date_input("返回英國日期", value=datetime.today())
+        d_r = st.date_input("返回英國日期")
+    with c3:
+        st.write("") # 為了對齊
+        submitted = st.form_submit_button("➕ 加入")
     
-    if st.button("確認加入"):
-        if d_return > d_leave:
-            days_out = (d_return - d_leave).days - 1
+    if submitted:
+        if d_r > d_l:
+            # 英國算法：去程回程當天不算，故減1
+            diff = (d_r - d_l).days - 1
             st.session_state.my_records.append({
-                "項目": f"第 {len(st.session_state.my_records)} 段離境",
-                "離開日期": d_leave, "返回日期": d_return, "離境天數": int(max(0, days_out))
+                "項目": f"旅遊紀錄 {len(st.session_state.my_records)}",
+                "離開日期": d_l,
+                "返回日期": d_r,
+                "離境天數": int(max(0, diff))
             })
             st.rerun()
 
-# --- 4. 顯示與管理清單 ---
+st.divider()
+
+# --- 4. 紀錄明細與「個別刪除」功能 ---
+st.subheader("📝 紀錄明細清單")
+
 if st.session_state.my_records:
-    df = pd.DataFrame(st.session_state.my_records)
-    st.subheader("📝 紀錄明細")
-    
-    # 使用 data_editor
-    edited_df = st.data_editor(df, use_container_width=True, num_rows="dynamic")
-    
-    if not edited_df.equals(df):
-        st.session_state.my_records = edited_df.to_dict('records')
-        st.rerun()
+    # 建立一個有刪除按鈕的列表
+    for idx, record in enumerate(st.session_state.my_records):
+        cols = st.columns([3, 2, 2, 1, 1])
+        cols[0].write(record["項目"])
+        cols[1].write(record["離開日期"])
+        cols[2].write(record["返回日期"])
+        cols[3].write(f"{record['離境天數']}天")
+        
+        # 個別取消按鈕
+        if cols[4].button("❌", key=f"del_{idx}"):
+            st.session_state.my_records.pop(idx)
+            st.rerun()
 
-    # --- 5. 計算與倒數 ---
-    total_days = edited_df["離境天數"].astype(int).sum()
-    ilr_date = visa_grant_date + timedelta(days=365*5)
+    # --- 5. 數據總計 ---
+    total_days = sum(r["離境天數"] for r in st.session_state.my_records)
+    
+    # 28天規定計算
+    ilr_date = visa_date + timedelta(days=365*5)
     apply_date = ilr_date - timedelta(days=28)
-    
-    # 強制使用 2026-03-27 作為今天進行倒數
+    # 以今天日期 2026-03-27 計算倒數
     today = datetime(2026, 3, 27).date()
-    days_to_go = (apply_date - today).days
+    days_left = (apply_date - today).days
 
-    st.info(f"📍 5年屆滿：{ilr_date} | 🚀 最早申請：{apply_date}")
+    st.divider()
+    st.subheader("📊 統計結果")
     
-    if days_to_go > 0:
-        st.metric("⏳ 距離最早申請日", f"{days_to_go} 天")
-    else:
-        st.success("🎉 已可申請！")
+    res1, res2 = st.columns(2)
+    res1.metric("總離境天數", f"{total_days} / 450 日")
+    res2.metric("狀態", "✅ 符合" if total_days <= 450 else "❌ 超標")
 
-    st.metric("📊 總離境天數", f"{total_days} / 450 日")
+    st.success(f"📅 最早申請日期 (提早28天)：**{apply_date}** (還有 {days_left} 天)")
 
-    # --- 6. 徹底清空按鈕 (暴力清除) ---
-    st.write("---")
-    if st.button("🚨 徹底清空所有舊資料 (強制重置)", type="primary"):
-        st.session_state.clear()
-        st.cache_data.clear() # 清除所有緩存
-        st.rerun()
+    # 匯出 CSV
+    df_export = pd.DataFrame(st.session_state.my_records)
+    csv = df_export.to_csv(index=False).encode('utf-8-sig')
+    st.download_button("📥 匯出 CSV", data=csv, file_name='uk_records.csv')
+else:
+    st.info("目前無紀錄。")
