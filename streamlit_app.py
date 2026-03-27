@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="英國 BNO 永居計算器", page_icon="🇬🇧")
-st.title("🇬🇧 英國永居 (ILR) 居住要求檢查")
+st.title(BNO 英國永居 (ILR) 居住要求檢查")
 
 # --- 1. 基礎日期設定 ---
 with st.container():
