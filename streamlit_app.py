@@ -10,7 +10,7 @@ st.set_page_config(page_title="英國 BNO 永居計算器", page_icon="🇬🇧"
 if 'my_records' not in st.session_state:
     st.session_state.my_records = []
 
-st.title("🇬🇧 英國永居 (ILR) 居住要求檢查")
+st.title("BNO 英國永居 (ILR) 居住要求檢查")
 st.caption("🔒 安全提示：為了保障隱私，每次重新整理或關閉網頁後，所有輸入資料將會自動清空。")
 
 # --- 2. 基礎日期設定 ---
